@@ -1,0 +1,15 @@
+# Ignore a specific folders
+opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04
+Python_Plotting
+tutorial
+demos
+
+# Ignore all files with the following extensions
+*.csv
+*.json
+
+# Ignore all folders under Main_Cplusplus
+Main_Cplusplus/*/
+
+# Unignore brownian_v1.5
+!Main_Cplusplus/brownian_v1.5/
