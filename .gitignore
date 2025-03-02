@@ -1,9 +1,14 @@
 # Ignore a specific folders
 .vscode/
-opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04/
-Main_Cplusplus/
-tutorial/
 demos/
+tutorial/
+opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04/
+Main_Cplusplus/brownian_v1.0
+Main_Cplusplus/brownian_v1.1
+Main_Cplusplus/brownian_v1.01
+Main_Cplusplus/brownian_v1.2
+Main_Cplusplus/brownian_v1.3
+Main_Cplusplus/brownian_v1.4
 
 # Ignore all files with the following extensions
 *.csv
@@ -11,5 +16,4 @@ demos/
 *.ipynb
 
 # Unignore a specific file or folder
-!Main_Cplusplus/brownian_v1.5/
 !Python_Plotting/plottingGen_v1.2.ipynb
