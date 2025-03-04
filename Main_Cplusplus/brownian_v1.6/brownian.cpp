@@ -20,24 +20,14 @@ int main() {
     const double eta = 3.26e-3;        // Viscosity of blood (N s/m^2)
     const double pi = M_PI;            // Use M_PI from <cmath>
 
-    // Particle sizes in meters (50 nm, 100 nm, 300 nm)
-    std::vector<double> particle_sizes = {50e-9, 100e-9, 300e-9};
-
-    // Calculate diffusion coefficients (Stokes-Einstein)
-    std::vector<double> D_values;
-    D_values.reserve(particle_sizes.size());
-    for (double size : particle_sizes) {
-        double D = kB * T / (6 * pi * eta * size);
-        D_values.push_back(D);
-        std::cout << "Particle size: " << std::fixed << std::setprecision(1)
-                  << size * 1e9 << " nm - Diffusion Coefficient: "
-                  << std::scientific << D << " m^2/s" << std::endl;
-    }
-
     // Simulation parameters
     const int num_particles = 10;        // number of particles per simulation
     const int num_steps = 1000;          // number of time steps per simulation
     std::vector<double> time_intervals = {0.1, 0.05, 0.01}; // seconds
+
+    // Define realistic blood particle size range (in meters)
+    const double min_particle_size = 50e-9;   // 50 nm
+    const double max_particle_size = 300e-9;    // 300 nm
 
     // Open CSV file for performance metrics
     std::ofstream perf_file("performance.csv");
@@ -45,161 +35,146 @@ int main() {
         std::cerr << "Error opening performance.csv for writing." << std::endl;
         return 1;
     }
-    // CSV header
-    perf_file << "time_interval,particle_size_nm,diffusion_coefficient,"
-              << "num_particles,num_steps,simulation_time_s\n";
+    // CSV header for performance metrics
+    perf_file << "time_interval,num_particles,num_steps,simulation_time_s\n";
 
     // Random number generation setup
     std::random_device rd;
 
     // Loop over each time interval
     for (double dt : time_intervals) {
-        // For each particle size (and its corresponding diffusion coefficient)
-        for (size_t i = 0; i < particle_sizes.size(); ++i) {
-            double size = particle_sizes[i];
-            double D = D_values[i];
+        // Record simulation start time for this dt
+        auto combo_start = std::chrono::high_resolution_clock::now();
 
-            // Record simulation start time for this combination
-            auto combo_start = std::chrono::high_resolution_clock::now();
+        // Containers to store per-particle MSD and particle sizes
+        std::vector<std::vector<double>> msd_all(num_particles, std::vector<double>(num_steps, 0.0));
+        std::vector<double> particle_sizes(num_particles, 0.0);
 
-            // Standard deviation for each step: sqrt(2 * D * dt)
-            double stddev = std::sqrt(2.0 * D * dt);
+        // Trajectory file: naming now depends only on dt
+        std::ostringstream traj_filename;
+        traj_filename << "traj_dt" << std::fixed << std::setprecision(2) << dt << ".csv";
+        std::ofstream traj_file(traj_filename.str());
+        if (!traj_file.is_open()) {
+            std::cerr << "Error opening file: " << traj_filename.str() << std::endl;
+            continue;
+        }
+        // CSV header now includes particle_size column (in meters)
+        traj_file << "particle,step,time,x,y,z,particle_size\n";
 
-            // We'll compute MSD in one pass
-            std::vector<double> msd(num_steps, 0.0);
+        // Buffer for trajectory lines to reduce I/O overhead
+        std::ostringstream buffer;
+        const int FLUSH_INTERVAL = 100; // flush every 100 steps
 
-            // Trajectory file: open once
-            std::ostringstream traj_filename;
-            traj_filename << "traj_dt" << std::fixed << std::setprecision(2) << dt
-                          << "_size" << std::fixed << std::setprecision(0)
-                          << size * 1e9 << "nm.csv";
-            std::ofstream traj_file(traj_filename.str());
-            if (!traj_file.is_open()) {
-                std::cerr << "Error opening file: " << traj_filename.str() << std::endl;
-                continue;
-            }
-            // CSV header now includes z coordinate
-            traj_file << "particle,step,time,x,y,z\n";
+        // Simulate each particle in parallel
+        #pragma omp parallel
+        {
+            // Each thread gets a unique seed
+            unsigned seed = rd() ^ ((std::mt19937::result_type)omp_get_thread_num() << 1);
+            std::mt19937 thread_gen(seed);
+            // Create a uniform distribution for particle sizes
+            std::uniform_real_distribution<double> size_dist(min_particle_size, max_particle_size);
 
-            // Buffer for trajectory lines to reduce I/O overhead
-            std::ostringstream buffer;
-            const int FLUSH_INTERVAL = 100; // e.g. flush every 100 steps
+            std::ostringstream local_buffer;
 
-            // Simulate each particle in parallel
-            #pragma omp parallel
-            {
-                // Each thread has a unique seed
-                unsigned seed = rd() ^ (std::mt19937::result_type)omp_get_thread_num() << 1;
-                std::mt19937 thread_gen(seed);
-                std::normal_distribution<double> thread_dist(0.0, stddev);
+            #pragma omp for
+            for (int p = 0; p < num_particles; p++) {
+                // Generate a random particle size for this particle
+                double particle_size = size_dist(thread_gen);
+                // Save the particle size for use in the MSD file
+                particle_sizes[p] = particle_size;
 
-                // A local array to accumulate partial msd
+                // Calculate the diffusion coefficient based on this size
+                double D = kB * T / (6 * pi * eta * particle_size);
+                // Standard deviation for displacement distribution: sqrt(2 * D * dt)
+                double particle_stddev = std::sqrt(2.0 * D * dt);
+                // Create a normal distribution for the particle's displacement
+                std::normal_distribution<double> particle_dist(0.0, particle_stddev);
+
+                // Vectors for trajectory: starting at (0,0,0)
+                std::vector<double> X(num_steps, 0.0);
+                std::vector<double> Y(num_steps, 0.0);
+                std::vector<double> Z(num_steps, 0.0);
+                // Vector for storing MSD for this particle
                 std::vector<double> local_msd(num_steps, 0.0);
 
-                // Thread-local ostringstream for partial trajectory output
-                std::ostringstream local_buffer;
+                // Pre-generate random steps for steps 1 to num_steps-1
+                std::vector<double> dx_steps(num_steps, 0.0);
+                std::vector<double> dy_steps(num_steps, 0.0);
+                std::vector<double> dz_steps(num_steps, 0.0);
+                for (int step = 1; step < num_steps; step++) {
+                    dx_steps[step] = particle_dist(thread_gen);
+                    dy_steps[step] = particle_dist(thread_gen);
+                    dz_steps[step] = particle_dist(thread_gen);
+                }
 
-                #pragma omp for
-                for (int p = 0; p < num_particles; p++) {
-                    // Pre-generate random steps for this particle
-                    std::vector<double> dx_steps(num_steps, 0.0);
-                    std::vector<double> dy_steps(num_steps, 0.0);
-                    std::vector<double> dz_steps(num_steps, 0.0);  // For z direction
+                // Update positions and compute MSD for this particle
+                for (int step = 1; step < num_steps; step++) {
+                    X[step] = X[step - 1] + dx_steps[step];
+                    Y[step] = Y[step - 1] + dy_steps[step];
+                    Z[step] = Z[step - 1] + dz_steps[step];
+                    local_msd[step] = (X[step]*X[step] + Y[step]*Y[step] + Z[step]*Z[step]);
+                }
+                // Store the computed MSD for this particle
+                msd_all[p] = local_msd;
 
-                    // Step 0: (x,y,z) = (0,0,0) at time=0
-                    std::vector<double> X(num_steps, 0.0);
-                    std::vector<double> Y(num_steps, 0.0);
-                    std::vector<double> Z(num_steps, 0.0);  // z coordinate
-
-                    // Generate random displacements for steps 1..num_steps-1
-                    for (int step = 1; step < num_steps; step++) {
-                        dx_steps[step] = thread_dist(thread_gen);
-                        dy_steps[step] = thread_dist(thread_gen);
-                        dz_steps[step] = thread_dist(thread_gen);  // generate z displacement
-                    }
-
-                    // Update positions step by step
-                    for (int step = 1; step < num_steps; step++) {
-                        X[step] = X[step - 1] + dx_steps[step];
-                        Y[step] = Y[step - 1] + dy_steps[step];
-                        Z[step] = Z[step - 1] + dz_steps[step]; // update z position
-                        // Accumulate MSD for this step (include z^2)
-                        local_msd[step] += (X[step] * X[step] + Y[step] * Y[step] + Z[step] * Z[step]);
-                    }
-
-                    // Now write out the trajectory for this particle (include z)
-                    local_buffer << p << "," << 0 << "," << 0.0 << "," 
-                                 << X[0] << "," << Y[0] << "," << Z[0] << "\n";
-                    for (int step = 1; step < num_steps; step++) {
-                        double time = step * dt;
-                        local_buffer << p << "," << step << "," << time << ","
-                                     << X[step] << "," << Y[step] << "," << Z[step] << "\n";
-
-                        // Periodic buffer flush
-                        if (step % FLUSH_INTERVAL == 0) {
-                            #pragma omp critical
-                            {
-                                buffer << local_buffer.str();
-                                local_buffer.str("");
-                            }
+                // Write out the trajectory for this particle, including its random size (in meters)
+                local_buffer << p << "," << 0 << "," << 0.0 << "," 
+                             << X[0] << "," << Y[0] << "," << Z[0] << "," << particle_size << "\n";
+                for (int step = 1; step < num_steps; step++) {
+                    double time = step * dt;
+                    local_buffer << p << "," << step << "," << time << ","
+                                 << X[step] << "," << Y[step] << "," << Z[step] << "," << particle_size << "\n";
+                    if (step % FLUSH_INTERVAL == 0) {
+                        #pragma omp critical
+                        {
+                            buffer << local_buffer.str();
+                            local_buffer.str("");
                         }
                     }
-                } // end for(p)
-
-                // Atomically add local_msd into global msd and dump remaining lines
+                }
+                // Flush any remaining data from the local buffer
                 #pragma omp critical
                 {
-                    for (int step = 0; step < num_steps; step++) {
-                        msd[step] += local_msd[step];
-                    }
                     buffer << local_buffer.str();
                 }
-            } // end parallel
+            } // end for each particle
+        } // end parallel region
 
-            // Average MSD across particles
-            for (int step = 0; step < num_steps; step++) {
-                msd[step] /= num_particles;
-            }
+        // Write buffered trajectory data to file
+        traj_file << buffer.str();
+        traj_file.close();
+        std::cout << "Saved trajectories to " << traj_filename.str() << std::endl;
 
-            // Write leftover buffer lines
-            traj_file << buffer.str();
-            traj_file.close();
-            std::cout << "Saved trajectories to " << traj_filename.str() << std::endl;
-
-            // Save the MSD to a CSV file
-            std::ostringstream msd_filename;
-            msd_filename << "msd_dt" << std::fixed << std::setprecision(2) << dt
-                         << "_size" << std::fixed << std::setprecision(0)
-                         << size * 1e9 << "nm.csv";
-            std::ofstream msd_file(msd_filename.str());
-            if (!msd_file.is_open()) {
-                std::cerr << "Error opening file: " << msd_filename.str() << std::endl;
-                continue;
-            }
-            msd_file << "step,time,msd\n";
+        // Save the per-particle MSD to a CSV file with particle and particle_size columns
+        std::ostringstream msd_filename;
+        msd_filename << "msd_dt" << std::fixed << std::setprecision(2) << dt << ".csv";
+        std::ofstream msd_file(msd_filename.str());
+        if (!msd_file.is_open()) {
+            std::cerr << "Error opening file: " << msd_filename.str() << std::endl;
+            continue;
+        }
+        // New CSV header: particle, step, time, msd, particle_size
+        msd_file << "particle,step,time,msd,particle_size\n";
+        for (int p = 0; p < num_particles; p++) {
             for (int step = 0; step < num_steps; step++) {
                 double time = step * dt;
-                msd_file << step << "," << time << "," << msd[step] << "\n";
+                msd_file << p << "," << step << "," << time << ","
+                         << msd_all[p][step] << "," << particle_sizes[p] << "\n";
             }
-            msd_file.close();
-            std::cout << "Saved MSD to " << msd_filename.str() << std::endl;
-
-            // Performance measurement
-            auto combo_end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> combo_duration = combo_end - combo_start;
-            perf_file << dt << ","
-                      << size * 1e9 << ","
-                      << D << ","
-                      << num_particles << ","
-                      << num_steps << ","
-                      << combo_duration.count() << "\n";
         }
+        msd_file.close();
+        std::cout << "Saved MSD to " << msd_filename.str() << std::endl;
+
+        // Performance measurement for this dt
+        auto combo_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> combo_duration = combo_end - combo_start;
+        perf_file << dt << "," << num_particles << "," << num_steps << ","
+                  << combo_duration.count() << "\n";
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
     std::cout << "Total simulation runtime: " << elapsed.count() << " seconds." << std::endl;
-
     perf_file.close();
     return 0;
 }
