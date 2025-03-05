@@ -17,3 +17,4 @@ Main_Cplusplus/brownian_v1.4
 
 # Unignore a specific file or folder
 !Python_Plotting/plottingGen_v1.2.ipynb
+!Python_Plotting/3d/2.ipynb
