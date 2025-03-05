@@ -29,28 +29,36 @@ int main() {
     const double min_particle_size = 50e-9;   // 50 nm
     const double max_particle_size = 300e-9;    // 300 nm
 
+    // Random device for seeding
+    std::random_device rd;
+
+    // Generate global particle sizes once for all dt values
+    std::vector<double> global_particle_sizes(num_particles, 0.0);
+    {
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<double> size_dist(min_particle_size, max_particle_size);
+        for (int p = 0; p < num_particles; ++p) {
+            global_particle_sizes[p] = size_dist(gen);
+        }
+    }
+
     // Open CSV file for performance metrics with additional columns
     std::ofstream perf_file("performance.csv");
     if (!perf_file.is_open()) {
         std::cerr << "Error opening performance.csv for writing." << std::endl;
         return 1;
     }
-    // Updated CSV header to include new columns:
-    // time_interval, num_particles, num_steps, simulation_time_s, particle, diffusion_coefficient, particle_size_nm
+    // CSV header: time_interval, num_particles, num_steps, simulation_time_s, particle, diffusion_coefficient, particle_size_nm
     perf_file << "time_interval,num_particles,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm\n";
-
-    // Random number generation setup
-    std::random_device rd;
 
     // Loop over each time interval
     for (double dt : time_intervals) {
         // Record simulation start time for this dt
         auto combo_start = std::chrono::high_resolution_clock::now();
 
-        // Containers to store per-particle MSD and particle sizes
+        // Containers to store per-particle MSD
         std::vector<std::vector<double>> msd_all(num_particles, std::vector<double>(num_steps, 0.0));
-        std::vector<double> particle_sizes(num_particles, 0.0);
-
+        
         // Trajectory file: naming depends on dt
         std::ostringstream traj_filename;
         traj_filename << "traj_dt" << std::fixed << std::setprecision(2) << dt << ".csv";
@@ -72,19 +80,15 @@ int main() {
             // Each thread gets a unique seed
             unsigned seed = rd() ^ ((std::mt19937::result_type)omp_get_thread_num() << 1);
             std::mt19937 thread_gen(seed);
-            // Create a uniform distribution for particle sizes
-            std::uniform_real_distribution<double> size_dist(min_particle_size, max_particle_size);
 
             std::ostringstream local_buffer;
 
             #pragma omp for
             for (int p = 0; p < num_particles; p++) {
-                // Generate a random particle size for this particle
-                double particle_size = size_dist(thread_gen);
-                // Save the particle size for use in the MSD file and later for performance metrics
-                particle_sizes[p] = particle_size;
+                // Use the global particle size instead of generating a new one
+                double particle_size = global_particle_sizes[p];
 
-                // Calculate the diffusion coefficient based on this size
+                // Calculate the diffusion coefficient based on this size for trajectory
                 double D = kB * T / (3 * pi * eta * particle_size);
                 // Standard deviation for displacement distribution: sqrt(2 * D * dt)
                 double particle_stddev = std::sqrt(2.0 * D * dt);
@@ -118,8 +122,8 @@ int main() {
                 // Store the computed MSD for this particle
                 msd_all[p] = local_msd;
 
-                // Write out the trajectory for this particle, including its random size (in meters)
-                local_buffer << p << "," << 0 << "," << 0.0 << "," 
+                // Write out the trajectory for this particle, including its fixed particle size (in meters)
+                local_buffer << p << "," << 0 << "," << 0.0 << ","
                              << X[0] << "," << Y[0] << "," << Z[0] << "," << particle_size << "\n";
                 for (int step = 1; step < num_steps; step++) {
                     double time = step * dt;
@@ -154,13 +158,13 @@ int main() {
             std::cerr << "Error opening file: " << msd_filename.str() << std::endl;
             continue;
         }
-        // New CSV header: particle, step, time, msd, particle_size
+        // CSV header: particle, step, time, msd, particle_size
         msd_file << "particle,step,time,msd,particle_size\n";
         for (int p = 0; p < num_particles; p++) {
             for (int step = 0; step < num_steps; step++) {
                 double time = step * dt;
                 msd_file << p << "," << step << "," << time << ","
-                         << msd_all[p][step] << "," << particle_sizes[p] << "\n";
+                         << msd_all[p][step] << "," << global_particle_sizes[p] << "\n";
             }
         }
         msd_file.close();
@@ -173,8 +177,8 @@ int main() {
         // For each particle, calculate diffusion coefficient and convert particle size to nm,
         // then write the performance and particle-specific info to the CSV file.
         for (int p = 0; p < num_particles; p++) {
-            double particle_size = particle_sizes[p];
-            // Compute the diffusion coefficient for this particle
+            double particle_size = global_particle_sizes[p];
+            // Compute the diffusion coefficient for this particle (using a different constant factor)
             double D = kB * T / (6 * pi * eta * particle_size);
             // Convert particle size from meters to nanometers
             double particle_size_nm = particle_size * 1e9;
