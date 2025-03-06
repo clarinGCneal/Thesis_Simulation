@@ -24,3 +24,7 @@ Using Ubuntu and WSL in Windows Platform
 - `g++ -std=c++11 -o brownianWmeasurements brownianWmeasurements.cpp`
     - Name of the output compiled file `brownianWmeasurement`
     - Name of the file you want to compile `brownianWmeasurements.cpp` 
+
+## Compile with optimization flags (Compile in v.1.6).
+- `g++ -O3 -fopenmp -march=native brownian.cpp -o brownian_simulation`
+`
