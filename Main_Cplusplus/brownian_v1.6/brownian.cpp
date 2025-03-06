@@ -48,7 +48,7 @@ int main() {
         std::cerr << "Error opening performance.csv for writing." << std::endl;
         return 1;
     }
-    // CSV header: time_interval, num_particles, num_steps, simulation_time_s, particle, diffusion_coefficient, particle_size_nm
+    // CSV header: time_interval,num_particles,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm
     perf_file << "time_interval,num_particles,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm\n";
 
     // Loop over each time interval
@@ -112,13 +112,19 @@ int main() {
                     dz_steps[step] = particle_dist(thread_gen);
                 }
 
-                // Update positions and compute MSD for this particle
+                // Cumulative sum: update positions sequentially due to dependency
                 for (int step = 1; step < num_steps; step++) {
                     X[step] = X[step - 1] + dx_steps[step];
                     Y[step] = Y[step - 1] + dy_steps[step];
                     Z[step] = Z[step - 1] + dz_steps[step];
-                    local_msd[step] = (X[step] * X[step] + Y[step] * Y[step] + Z[step] * Z[step]);
                 }
+
+                // Vectorized MSD computation using OpenMP simd (each iteration is independent)
+                #pragma omp simd
+                for (int step = 0; step < num_steps; step++) {
+                    local_msd[step] = X[step] * X[step] + Y[step] * Y[step] + Z[step] * Z[step];
+                }
+
                 // Store the computed MSD for this particle
                 msd_all[p] = local_msd;
 
@@ -179,11 +185,11 @@ int main() {
         for (int p = 0; p < num_particles; p++) {
             double particle_size = global_particle_sizes[p];
             // Compute the diffusion coefficient for this particle (using a different constant factor)
-            double D = kB * T / (6 * pi * eta * particle_size);
+            double D_perf = kB * T / (6 * pi * eta * particle_size);
             // Convert particle size from meters to nanometers
             double particle_size_nm = particle_size * 1e9;
             perf_file << dt << "," << num_particles << "," << num_steps << ","
-                      << combo_duration.count() << "," << p << "," << D << "," << particle_size_nm << "\n";
+                      << combo_duration.count() << "," << p << "," << D_perf << "," << particle_size_nm << "\n";
         }
     }
 
