@@ -42,14 +42,14 @@ int main() {
         }
     }
 
-    // Open CSV file for performance metrics with additional columns
+    // Open CSV file for performance metrics without the redundant num_particles column.
     std::ofstream perf_file("performance.csv");
     if (!perf_file.is_open()) {
         std::cerr << "Error opening performance.csv for writing." << std::endl;
         return 1;
     }
-    // CSV header: time_interval,num_particles,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm
-    perf_file << "time_interval,num_particles,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm\n";
+    // CSV header: time_interval, num_steps, simulation_time_s, particle, diffusion_coefficient, particle_size_nm
+    perf_file << "time_interval,num_steps,simulation_time_s,particle,diffusion_coefficient,particle_size_nm\n";
 
     // Loop over each time interval
     for (double dt : time_intervals) {
@@ -188,8 +188,8 @@ int main() {
             double D_perf = kB * T / (6 * pi * eta * particle_size);
             // Convert particle size from meters to nanometers
             double particle_size_nm = particle_size * 1e9;
-            perf_file << dt << "," << num_particles << "," << num_steps << ","
-                      << combo_duration.count() << "," << p << "," << D_perf << "," << particle_size_nm << "\n";
+            perf_file << dt << "," << num_steps << "," << combo_duration.count() << "," 
+                      << p << "," << D_perf << "," << particle_size_nm << "\n";
         }
     }
 
