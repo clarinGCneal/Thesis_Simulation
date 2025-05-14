@@ -37,11 +37,11 @@ int main() {
     int delta_steps = 1000;    // Increase in steps per run
 
     // Constants (remain unchanged)
-    const double kB = 1.38064852e-23;       // Boltzmann constant (J/K)
-    const double T = 310;                   // Temperature (K)
-    const double eta = 3.26e-3;             // Viscosity of blood (N s/m^2)
-    const double pi = std::numbers::pi;     // Pi constant from <numbers> header
-    std::vector<double> time_intervals = {0.1}; // seconds
+    const double kB = 1.38064852e-23;               // Boltzmann constant (J/K)
+    const double T = 310;                           // Temperature (K)
+    const double eta = 3.26e-3;                     // Viscosity of blood (N s/m^2)
+    const double pi = std::numbers::pi;             // Pi constant from <numbers> header
+    std::vector<double> time_intervals = {0.1};     // seconds
 
     // Limit CPU utilization by setting a fixed number of threads.
     omp_set_num_threads(omp_get_max_threads());
