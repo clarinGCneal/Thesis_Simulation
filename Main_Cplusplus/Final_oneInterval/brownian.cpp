@@ -8,9 +8,24 @@
 #include <chrono>
 #include <omp.h>
 
-
+// Function to explicitly reset OpenMP environment before each parallel region
+void resetOpenMPEnvironment(int num_desired_threads) {
+    // Force reset of OpenMP state
+    omp_set_nested(0);
+    omp_set_dynamic(0);
+    omp_set_num_threads(num_desired_threads);
+    
+    // Print confirmation of OpenMP settings
+    std::cout << "OpenMP environment: threads=" << num_desired_threads 
+              << ", dynamic=" << omp_get_dynamic() 
+              << ", nested=" << omp_get_nested() << std::endl;
+}
 
 int main() {
+    // Initialize OpenMP environment explicitly at the start
+    omp_set_nested(0);
+    omp_set_dynamic(0);
+    
     // Open benchmark CSV file to record each run's parameters and runtime.
     std::ofstream bench_file("benchmark.csv");
     if (!bench_file.is_open()) {
@@ -33,7 +48,7 @@ int main() {
 
     // Define simulation run parameters.
     int initial_particles = 10;
-    int initial_steps = 1000;
+    int initial_steps = 1000000;
     int num_runs = 1;         // Total number of runs (adjust as needed)
     int delta_particles = 10;  // Increase in particle count per run
     int delta_steps = 1000;    // Increase in steps per run
@@ -43,7 +58,7 @@ int main() {
     const double T = 310;                           // Temperature (K)
     const double eta = 3.26e-3;                     // Viscosity of blood (N s/m^2)
     const double pi = std::numbers::pi;             // Pi constant from <numbers> header
-    std::vector<double> time_intervals = {0.05};     // seconds
+    std::vector<double> time_intervals = {0.1};     // seconds
 
     // Cache line size for avoiding false sharing (typical value is 64 bytes)
     const int CACHE_LINE_SIZE = 64;
@@ -51,7 +66,7 @@ int main() {
 
     // Limit CPU utilization by setting a fixed number of threads.
     const int num_threads = omp_get_max_threads();
-    omp_set_num_threads(num_threads);
+    resetOpenMPEnvironment(num_threads);
 
     // Pre-allocate memory for all runs to reduce reallocations
     int max_particles = initial_particles + (num_runs - 1) * delta_particles;
@@ -115,6 +130,9 @@ int main() {
             // Each line is ~50-70 chars: p,step,time,x,y,z,size\n
             const size_t estimated_line_size = 70;
             const size_t buffer_size_estimate = num_steps * estimated_line_size;
+            
+            // Reset OpenMP environment before parallel region to ensure consistency
+            resetOpenMPEnvironment(num_threads);
             
             // Begin parallel region with OpenMP.
             #pragma omp parallel
