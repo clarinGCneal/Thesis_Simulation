@@ -28,3 +28,4 @@ Using Ubuntu and WSL in Windows Platform
 ## Compile with optimization flags (Compile in v.1.6).
 - `g++ -O3 -fopenmp -march=native brownian.cpp -o brownian_simulation`
 - Updated: `g++ -std=c++20 -O3 -march=native -fopenmp brownian.cpp -o brownian`
+- More Optimized: `g++ -std=c++20 -O3 -march=native -mtune=native -fopenmp -fopenmp-simd -flto brownian.cpp -o brownian`

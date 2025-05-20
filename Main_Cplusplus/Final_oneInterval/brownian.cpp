@@ -26,6 +26,20 @@ int main() {
     omp_set_nested(0);
     omp_set_dynamic(0);
     
+    // Define simulation run parameters.
+    int initial_particles = 10;
+    int initial_steps = 1000;
+    int num_runs = 50;         // Total number of runs (adjust as needed)
+    int delta_particles = 10;  // Increase in particle count per run
+    int delta_steps = 0;    // Increase in steps per run
+
+    // Constants (remain unchanged)
+    const double kB = 1.38064852e-23;               // Boltzmann constant (J/K)
+    const double T = 310;                           // Temperature (K)
+    const double eta = 3.26e-3;                     // Viscosity of blood (N s/m^2)
+    const double pi = std::numbers::pi;             // Pi constant from <numbers> header
+    std::vector<double> time_intervals = {0.1};     // seconds
+
     // Open benchmark CSV file to record each run's parameters and runtime.
     std::ofstream bench_file("benchmark.csv");
     if (!bench_file.is_open()) {
@@ -45,20 +59,6 @@ int main() {
         perf_header << "time_interval,num_steps,simulation_time_s,particle_index,diffusion_coefficient,particle_size_nm\n";
         // The file is automatically closed at the end of this scope.
     }
-
-    // Define simulation run parameters.
-    int initial_particles = 10;
-    int initial_steps = 1000000;
-    int num_runs = 1;         // Total number of runs (adjust as needed)
-    int delta_particles = 10;  // Increase in particle count per run
-    int delta_steps = 1000;    // Increase in steps per run
-
-    // Constants (remain unchanged)
-    const double kB = 1.38064852e-23;               // Boltzmann constant (J/K)
-    const double T = 310;                           // Temperature (K)
-    const double eta = 3.26e-3;                     // Viscosity of blood (N s/m^2)
-    const double pi = std::numbers::pi;             // Pi constant from <numbers> header
-    std::vector<double> time_intervals = {0.1};     // seconds
 
     // Cache line size for avoiding false sharing (typical value is 64 bytes)
     const int CACHE_LINE_SIZE = 64;
