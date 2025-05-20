@@ -29,9 +29,9 @@ int main() {
     // Define simulation run parameters.
     int initial_particles = 10;
     int initial_steps = 1000;
-    int num_runs = 50;         // Total number of runs (adjust as needed)
+    int num_runs = 1;         // Total number of runs (adjust as needed)
     int delta_particles = 10;  // Increase in particle count per run
-    int delta_steps = 0;    // Increase in steps per run
+    int delta_steps = 1000;    // Increase in steps per run
 
     // Constants (remain unchanged)
     const double kB = 1.38064852e-23;               // Boltzmann constant (J/K)
